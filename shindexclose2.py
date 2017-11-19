@@ -10,9 +10,10 @@ allDataSet=[]
 n_input = 1    # input data vector is 1, [close]
 lstm_step = 30   # 30 days data as time seq
 n_hidden = 128   # LSTM  hidden cells
-n_output = 21  #  output is a 41d vector, fron 10% to -10%, step is 1.0%
+n_output = 1  #  output is a 41d vector, fron 10% to -10%, step is 1.0%
                #  the value can be 11 21 41 , caculator step automatic
                #  if it is 3 ,  step should be -0.5 +0.5
+               #  n_output is 1 ,for value output not one hot vector
 batch_size = 64
 
 testDataAccount = 40  # how many data account of one stock ,for forming a testData set
