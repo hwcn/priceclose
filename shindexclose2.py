@@ -81,24 +81,21 @@ def convert2array(datas):
             if i==0:
                 i=1
                 continue
-            ratio = (everyday[0]-lastdayclose)/lastdayclose
+            ratio = everyday[0]
             lastdayclose = everyday[0]
 #            print(ratio)
-            ratio = calonehot(ratio)       # change to a one hot  vector
+#            ratio = calonehot(ratio)       # change to a one hot  vector
 #            print(ratio)
             if len(onecodelabels[0]) == 0 :
-                onecodelabels = np.array([ratio],dtype='float32')
+                onecodelabels = np.array([[ratio]],dtype='float32')
             else:
-                onecodelabels = np.append(onecodelabels,[ratio],axis=0)
+                onecodelabels = np.append(onecodelabels,[[ratio]],axis=0)
           
         alllabels.append(onecodelabels)
-    for code in allarray:
-        baseprice = code[0][0]
-        for everyday in code:
-            everyday[0]=everyday[0]/baseprice
-#    print "data len"
-#    print(len(allarray[0]))
-#    print(len(alllabels[0]))
+#    for code in allarray:
+#        baseprice = code[0][0]
+#        for everyday in code:
+#            everyday[0]=everyday[0]/baseprice
     return allarray,alllabels
 
 # according dimention of output,cacluate the step point of up to down tick
@@ -139,14 +136,27 @@ def onehot2ratio(indexofonehot):
         ret = (toVarray[indexofonehot-1]+toVarray[indexofonehot])/2
     return ret
 
-def toNormalize(alldatas):
+def toNormalize(alldatas,alllabels):
+    i = 0
     for onecode in alldatas:
         _maxprice = 0
+        _minprice = onecode[0][0]
+        _firstday = onecode[0][0]
         for everyday in onecode:
             if _maxprice <= everyday[0]:
                 _maxprice = everyday[0]
+            if _minprice >  everyday[0]:
+                _minprice = everyday[0]
+
+        _maxprice = _maxprice * 1.3        # add 30% ,to force all data below 1.0
+        _minprice = _minprice * 0.7        # minuse 30%
         for everyday in onecode:
-            everyday[0] = everyday[0] / _maxprice
+#            everyday[0] = everyday[0] / _maxprice
+            everyday[0] = (everyday[0] - _minprice) / (_maxprice - _minprice)
+        for everyday in alllabels[i]:
+            everyday[0] = (everyday[0] - _minprice) / (_maxprice - _minprice)
+        i = i + 1
+
 
 def toNormalize2(alldatas):   # methord:  initday is zero
     for onecode in alldatas:
@@ -278,8 +288,8 @@ def RNN(_X, _istate, _weight, _biases):
     outputs, states = tf.contrib.rnn.static_rnn(lstm_cell,_x,dtype=tf.float32)
     return tf.matmul(outputs[-1],_weight['out'])+_biases['out']
 
-toVarray=productVarray(n_output)
-dataFilePath="./index/sh"
+#toVarray=productVarray(n_output)
+dataFilePath="S:/pricedata/index/sh"
 #dataFilePath="./bigbank"
 #dataFilePath="s:/pricedata/financestock/d_pre"
 modelpath="models/shindex.ckpt"
@@ -288,8 +298,10 @@ allDataSet = loadData(dataFilePath)
 print(allDataSet[0][0])
 print(allDataSet[0][1])
 allSamples,allLabels = convert2array(allDataSet)
+print("before normalize")
 print(allSamples[0][0])
-toNormalize(allSamples)
+toNormalize(allSamples,allLabels)
+print("after normalize")
 print(allSamples[0][0])
 accountSamples,accountArray = calTotal(allSamples,allLabels)
 print(accountSamples)   # total learn datas  27844
@@ -308,18 +320,25 @@ TestV,TestL = prepareTestSet(allSamples,allLabels)  # this is the test data , co
 
 pred = RNN(x,istate,weights,biases)
 
-cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred,labels=y))
+#cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred,labels=y))
+cost = tf.square(tf.subtract(y, pred))
 optimizer = tf.train.RMSPropOptimizer(0.0001,0.9).minimize(cost)
 #optimizer = tf.train.AdamOptimizer(0.0001,0.9).minimize(cost)
 
-correct_pred = tf.equal(tf.argmax(pred,1),tf.argmax(y,1))
-accuracy = tf.reduce_mean(tf.cast(correct_pred,tf.float32))
 
-prediction = tf.argmax(pred,1)
+#correct_pred = tf.equal(tf.argmax(pred,1),tf.argmax(y,1))
+#accuracy = tf.reduce_mean(tf.cast(correct_pred,tf.float32))
+
+#prediction = tf.argmax(pred,1)
+
+bx, by = getbatch(5)
+print(bx)
+print(by)
+print("hhhhhhhhhhhhhhhhhh")
+
+
 
 if len(sys.argv) == 1:
-
-
 
     #init = tf.initialize_all_variables()
     init = tf.global_variables_initializer()
@@ -332,14 +351,20 @@ if len(sys.argv) == 1:
     #with tf.Session() as sess:
         sess.run(init)
         step = 1
-        while step <= 150000:
+        while step <= 2000:
             step = step + 1
             batch_xs, batch_ys = getbatch(batch_size)
+ #           print(batch_xs)
+ #           print(batch_ys)
             sess.run(optimizer,feed_dict={x:batch_xs, y:batch_ys,istate:np.zeros((batch_size,2*n_hidden))})
             if step % 100 == 0:
-                acc = sess.run(accuracy,feed_dict={x:batch_xs, y:batch_ys,istate:np.zeros((batch_size,2*n_hidden))})
-                loss = sess.run(cost, feed_dict={x:batch_xs, y:batch_ys,istate:np.zeros((batch_size,2*n_hidden))})
-                print("Iter: "+str(step)+" Loss= "+"{:0.5f}".format(loss)+"  Accuracy="+"{:0.5f}".format(acc))
+ #               acc = sess.run(costaccuracy,feed_dict={x:batch_xs, y:batch_ys,istate:np.zeros((batch_size,2*n_hidden))})
+                loss = np.mean(sess.run(cost, feed_dict={x:batch_xs, y:batch_ys,istate:np.zeros((batch_size,2*n_hidden))}))
+                thispred = sess.run(pred,feed_dict={x:batch_xs, y:batch_ys,istate:np.zeros((batch_size,2*n_hidden))})
+
+                print("Iter: "+str(step)+" Loss= "+"{:0.5f}".format(loss))
+ #               print(batch_ys)
+ #               print(thispred)
         print("Optimization Finished!")
         print("Saving model...")
         saver_path = saver.save(sess,modelpath)
@@ -347,11 +372,11 @@ if len(sys.argv) == 1:
         print("开始预测...")
         print("Test Label is :")
         print(TestL)
-        accu = sess.run(accuracy,feed_dict={x:TestV, y:TestL,istate:np.zeros((batch_size,2*n_hidden))})
+        loss = np.mean(sess.run(cost,feed_dict={x:TestV, y:TestL,istate:np.zeros((batch_size,2*n_hidden))}))
         thispred = sess.run(pred,feed_dict={x:TestV, y:TestL,istate:np.zeros((batch_size,2*n_hidden))})
         print("predict:")
         print(thispred)
-        print("Accuracy is "+"{:0.5f}".format(accu))
+        print("Accuracy is "+"{:0.5f}".format(loss))
 elif sys.argv[1] == 'learn':
     print('learn')
 elif sys.argv[1] == 'predict':
@@ -395,8 +420,9 @@ elif sys.argv[1] == 'showdata':
         print("开始预测...")
         print("Test Label is :")
         print(TestL)
-        accu = sess.run(accuracy,feed_dict={x:TestV, y:TestL,istate:np.zeros((batch_size,2*n_hidden))})
-        thispred = sess.run(prediction,feed_dict={x:TestV,istate:np.zeros((batch_size,2*n_hidden))})
+        loss = np.mean(sess.run(cost,feed_dict={x:TestV, y:TestL,istate:np.zeros((batch_size,2*n_hidden))}))
+        thispred = sess.run(pred,feed_dict={x:TestV, y:TestL,istate:np.zeros((batch_size,2*n_hidden))})
+
         print("predict:")
         print(thispred)
         
@@ -406,32 +432,41 @@ elif sys.argv[1] == 'showdata':
     testx = np.zeros([testDataAccount])
     d=allSamples[0]
     j = len(d)-testDataAccount  # the last price index 
+    print(TestV.shape)
     for i in range(testDataAccount):
-        pindex = d[j][0]*(1+onehot2ratio(thispred[i])/100.0)
+        pindex = thispred[i][0]               #show predict value
+#        pindex = TestV[i][lstm_step-1][0]      #show Test Seq Set value
+#        pindex = TestL[i][0]                   # show Test labels set value
         j=j+1
         testdata=np.append(testdata,[pindex])
         testx[i]=origDataLen-testDataAccount+i
     plt.plot(testx,testdata,'k')
 
+    orilabels = np.array([],dtype='float32')
+    for i in range(origDataLen-testDataAccount):
+        pindex = allSamples[0][-origDataLen+testDataAccount+i][0]
+        orilabels = np.append(orilabels,[pindex])
+    plt.plot(orilabels,'g')
+
     with tf.Session(config=session_conf) as sess:
         saver.restore(sess,modelpath)
         print("开始预测...")
         predictdata=np.array([],dtype='float32')
+        seq=d[-lstm_step-testDataAccount:-testDataAccount]
         for j in range(testDataAccount):
-            seq=d[-lstm_step-testDataAccount:-testDataAccount]
-            print(seq)
+
             seqdata=np.array([seq],dtype='float32')
             seqSet=form1seq(seqdata) 
-            thispred = sess.run(prediction,feed_dict={x:seqSet,istate:np.zeros((batch_size,2*n_hidden))})
+            thispred = sess.run(pred,feed_dict={x:seqSet,istate:np.zeros((batch_size,2*n_hidden))})
             print("predict:")
             print(thispred)
-            newprice = seq[lstm_step-1][0] * (1+onehot2ratio(thispred[0])/100.0)
+            newprice = thispred[0][0]
             predictdata=np.append(predictdata,[newprice])
             for i in range(lstm_step-1):
                 seq[i][0]=seq[i+1][0]
             seq[lstm_step-1] = newprice
         print(predictdata)
-    plt.plot(testx,predictdata,'b')
+#    plt.plot(testx,predictdata,'b')
 
 
 #print(Sam)
